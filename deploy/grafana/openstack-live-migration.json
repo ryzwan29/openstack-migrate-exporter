@@ -7,13 +7,13 @@
     "live-migration"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "graphTooltip": 1,
   "timezone": "browser",
   "refresh": "10s",
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "annotations": {
@@ -62,10 +62,10 @@
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(nova_live_migrations_total{job=~\"$job\"}, source)",
+          "query": "label_values(nova_live_migration_start_timestamp_seconds{job=~\"$job\"}, source)",
           "refId": "v"
         },
-        "definition": "label_values(nova_live_migrations_total{job=~\"$job\"}, source)",
+        "definition": "label_values(nova_live_migration_start_timestamp_seconds{job=~\"$job\"}, source)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -86,10 +86,10 @@
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(nova_live_migrations_total{job=~\"$job\"}, dest)",
+          "query": "label_values(nova_live_migration_start_timestamp_seconds{job=~\"$job\"}, dest)",
           "refId": "v"
         },
-        "definition": "label_values(nova_live_migrations_total{job=~\"$job\"}, dest)",
+        "definition": "label_values(nova_live_migration_start_timestamp_seconds{job=~\"$job\"}, dest)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -121,7 +121,7 @@
       "id": 2,
       "type": "stat",
       "title": "Exporter",
-      "description": "Last poll of Nova API succeeded",
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -163,6 +163,7 @@
               }
             }
           ],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -175,8 +176,7 @@
                 "value": 1
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -196,7 +196,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "In progress",
+      "title": "Running now",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -225,6 +225,7 @@
         "defaults": {
           "unit": "short",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -241,8 +242,7 @@
                 "value": 3
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -263,7 +263,7 @@
       "id": 4,
       "type": "stat",
       "title": "Completed (range)",
-      "description": "",
+      "description": "Migrations with status completed whose finish time is inside the selected time range",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -280,7 +280,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(increase(nova_live_migrations_total{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]))",
+          "expr": "count(((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]) >= $__from/1000) <= $__to/1000))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -291,6 +291,7 @@
         "defaults": {
           "unit": "short",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -299,8 +300,7 @@
                 "value": null
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -338,7 +338,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(increase(nova_live_migrations_total{source=~\"$source\",dest=~\"$dest\",status=~\"failed|error|cancelled\"}[$__range]))",
+          "expr": "count(((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=~\"failed|error|cancelled\"}[$__range]) >= $__from/1000) <= $__to/1000))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -349,6 +349,7 @@
         "defaults": {
           "unit": "short",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -361,8 +362,7 @@
                 "value": 1
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -400,7 +400,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(increase(nova_live_migration_duration_seconds_sum{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range])) / sum(increase(nova_live_migration_duration_seconds_count{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]))",
+          "expr": "avg((last_over_time(nova_live_migration_finished_duration_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]) >= $__from/1000) <= $__to/1000)))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -411,6 +411,7 @@
         "defaults": {
           "unit": "s",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -419,8 +420,7 @@
                 "value": null
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -440,8 +440,8 @@
     {
       "id": 7,
       "type": "stat",
-      "title": "p95 duration (range)",
-      "description": "Bucket resolution only (5,10,20,30,45,60,90,120,180,300,600s...)",
+      "title": "Max duration (range)",
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -458,7 +458,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (increase(nova_live_migration_duration_seconds_bucket{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range])))",
+          "expr": "max((last_over_time(nova_live_migration_finished_duration_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__range]) >= $__from/1000) <= $__to/1000)))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -469,6 +469,7 @@
         "defaults": {
           "unit": "s",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -477,8 +478,7 @@
                 "value": null
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -527,6 +527,7 @@
         "defaults": {
           "unit": "s",
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -543,8 +544,7 @@
                 "value": 120
               }
             ]
-          },
-          "noValue": "0"
+          }
         },
         "overrides": []
       },
@@ -564,7 +564,7 @@
     {
       "id": 9,
       "type": "row",
-      "title": "Running migrations (live)",
+      "title": "Running migrations",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -576,9 +576,9 @@
     },
     {
       "id": 10,
-      "type": "timeseries",
-      "title": "Memory transfer speed",
-      "description": "Speed between the last two polls (from Nova memory_processed_bytes). Includes re-sent dirty pages.",
+      "type": "table",
+      "title": "Running now",
+      "description": "Live migrations currently in progress, with the instance name",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -586,8 +586,8 @@
       "gridPos": {
         "x": 0,
         "y": 6,
-        "w": 12,
-        "h": 8
+        "w": 24,
+        "h": 5
       },
       "targets": [
         {
@@ -595,51 +595,168 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_memory_speed_bytes_per_second{source=~\"$source\",dest=~\"$dest\"}",
-          "legendFormat": "{{instance}} {{source}}\u2192{{dest}}",
-          "refId": "A"
+          "expr": "nova_live_migration_start_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\",status=\"\"} * 1000",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "nova_live_migration_elapsed_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "nova_live_migration_memory_progress_ratio{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "nova_live_migration_memory_speed_bytes_per_second{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "",
+          "refId": "D",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "instance_name": "Instance",
+              "instance_uuid": "Instance UUID",
+              "source": "Source",
+              "dest": "Dest",
+              "migration": "Migration",
+              "Value #A": "Started",
+              "Value #B": "Elapsed",
+              "Value #C": "Progress",
+              "Value #D": "Speed"
+            },
+            "indexByName": {
+              "Instance": 0,
+              "Instance UUID": 1,
+              "Source": 2,
+              "Dest": 3,
+              "Migration": 4,
+              "Started": 5,
+              "Elapsed": 6,
+              "Progress": 7,
+              "Speed": 8
+            }
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "noValue": "no migration"
+            "align": "auto"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Started"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:MM/DD/YYYY, hh:mm:ss A"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Elapsed"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Progress"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Speed"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Started",
+            "desc": true
+          }
+        ]
       }
     },
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Average speed since start",
-      "description": "",
+      "title": "Memory transfer speed",
+      "description": "Speed between the last two polls (Nova memory_processed_bytes). Includes re-sent dirty pages.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 6,
+        "x": 0,
+        "y": 11,
         "w": 12,
         "h": 8
       },
@@ -649,8 +766,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_memory_avg_speed_bytes_per_second{source=~\"$source\",dest=~\"$dest\"}",
-          "legendFormat": "{{instance}} {{source}}\u2192{{dest}}",
+          "expr": "nova_live_migration_memory_speed_bytes_per_second{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "{{instance_name}}  {{source}}\u2192{{dest}}",
           "refId": "A"
         }
       ],
@@ -660,10 +777,9 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
+            "showPoints": "never"
           },
-          "noValue": "no migration"
+          "noValue": "no running migration"
         },
         "overrides": []
       },
@@ -686,15 +802,15 @@
       "id": 12,
       "type": "timeseries",
       "title": "Memory remaining",
-      "description": "If this keeps growing or plateaus the guest dirties memory faster than it is copied (migration not converging).",
+      "description": "If this grows or plateaus the guest dirties memory faster than it is copied (not converging).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 14,
-        "w": 8,
+        "x": 12,
+        "y": 11,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -703,8 +819,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_memory_remaining_bytes{source=~\"$source\",dest=~\"$dest\"}",
-          "legendFormat": "{{instance}} {{source}}\u2192{{dest}}",
+          "expr": "nova_live_migration_memory_remaining_bytes{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "{{instance_name}}  {{source}}\u2192{{dest}}",
           "refId": "A"
         }
       ],
@@ -714,10 +830,9 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
+            "showPoints": "never"
           },
-          "noValue": "no migration"
+          "noValue": "no running migration"
         },
         "overrides": []
       },
@@ -746,10 +861,10 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 8,
-        "y": 14,
-        "w": 8,
-        "h": 8
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 7
       },
       "targets": [
         {
@@ -757,8 +872,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_memory_progress_ratio{source=~\"$source\",dest=~\"$dest\"}",
-          "legendFormat": "{{instance}} {{source}}\u2192{{dest}}",
+          "expr": "nova_live_migration_memory_progress_ratio{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "{{instance_name}}  {{source}}\u2192{{dest}}",
           "refId": "A"
         }
       ],
@@ -768,10 +883,9 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
+            "showPoints": "never"
           },
-          "noValue": "no migration",
+          "noValue": "no running migration",
           "min": 0,
           "max": 1
         },
@@ -795,17 +909,17 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Elapsed",
+      "title": "Average speed since start",
       "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 16,
-        "y": 14,
-        "w": 8,
-        "h": 8
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 7
       },
       "targets": [
         {
@@ -813,21 +927,20 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_elapsed_seconds{source=~\"$source\",dest=~\"$dest\"}",
-          "legendFormat": "{{instance}} {{source}}\u2192{{dest}}",
+          "expr": "nova_live_migration_memory_avg_speed_bytes_per_second{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}",
+          "legendFormat": "{{instance_name}}  {{source}}\u2192{{dest}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "Bps",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
+            "showPoints": "never"
           },
-          "noValue": "no migration"
+          "noValue": "no running migration"
         },
         "overrides": []
       },
@@ -849,11 +962,11 @@
     {
       "id": 15,
       "type": "row",
-      "title": "History",
+      "title": "History (finished inside the selected time range)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 26,
         "w": 24,
         "h": 1
       },
@@ -861,137 +974,17 @@
     },
     {
       "id": 16,
-      "type": "timeseries",
-      "title": "Migrations per outcome",
-      "description": "Counts per Grafana interval",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 23,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (status) (increase(nova_live_migrations_total{source=~\"$source\",dest=~\"$dest\"}[$__interval]))",
-          "legendFormat": "{{status}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal"
-            }
-          },
-          "noValue": "no migration"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 17,
-      "type": "timeseries",
-      "title": "Duration p50 / p95",
-      "description": "15m window; only shows points when migrations finished in the window",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 23,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "histogram_quantile(0.50, sum by (le) (increase(nova_live_migration_duration_seconds_bucket{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[15m])))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le) (increase(nova_live_migration_duration_seconds_bucket{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[15m])))",
-          "legendFormat": "p95",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "noValue": "no migration"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Migrations by route (source\u2192dest)",
+      "type": "bargauge",
+      "title": "Duration per migration",
       "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 16,
-        "y": 23,
-        "w": 8,
+        "x": 0,
+        "y": 27,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -1000,55 +993,121 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (source, dest) (increase(nova_live_migrations_total{source=~\"$source\",dest=~\"$dest\",status=\"completed\"}[$__interval]))",
-          "legendFormat": "{{source}}\u2192{{dest}}",
-          "refId": "A"
+          "expr": "(last_over_time(nova_live_migration_finished_duration_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000))",
+          "legendFormat": "{{instance_name}} {{source}}\u2192{{dest}} ({{status}})",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal"
-            }
+          "unit": "s",
+          "min": 0,
+          "noValue": "no finished migration in range",
+          "color": {
+            "mode": "continuous-GrYlRd"
           },
-          "noValue": "no migration"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
           "calcs": [
-            "max",
             "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          ],
+          "fields": "",
+          "values": false
         }
       }
     },
     {
-      "id": 19,
+      "id": 17,
+      "type": "bargauge",
+      "title": "Average speed per migration",
+      "description": "Only for migrations that the exporter saw while running",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(last_over_time(nova_live_migration_final_avg_speed_bytes_per_second{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000))",
+          "legendFormat": "{{instance_name}} {{source}}\u2192{{dest}} ({{status}})",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "noValue": "no finished migration in range",
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 18,
       "type": "table",
-      "title": "Last finished migration per route",
+      "title": "Migration history",
+      "description": "Every migration that finished inside the dashboard time range: which instance, from/to which host, start and finish time. Avg speed / Memory sent are only filled when the exporter saw the migration running.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 35,
         "w": 24,
-        "h": 8
+        "h": 10
       },
       "targets": [
         {
@@ -1056,7 +1115,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_last_duration_seconds{source=~\"$source\",dest=~\"$dest\"}",
+          "expr": "((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000) * 1000",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1068,7 +1127,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_last_finished_timestamp_seconds{source=~\"$source\",dest=~\"$dest\"} * 1000",
+          "expr": "(last_over_time(nova_live_migration_start_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000)) * 1000",
           "legendFormat": "",
           "refId": "B",
           "instant": true,
@@ -1080,7 +1139,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_last_avg_speed_bytes_per_second{source=~\"$source\",dest=~\"$dest\"}",
+          "expr": "(last_over_time(nova_live_migration_finished_duration_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000))",
           "legendFormat": "",
           "refId": "C",
           "instant": true,
@@ -1092,9 +1151,21 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "nova_live_migration_last_memory_processed_bytes{source=~\"$source\",dest=~\"$dest\"}",
+          "expr": "(last_over_time(nova_live_migration_final_avg_speed_bytes_per_second{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000))",
           "legendFormat": "",
           "refId": "D",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(last_over_time(nova_live_migration_final_memory_processed_bytes{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) and on(migration) ((last_over_time(nova_live_migration_end_timestamp_seconds{job=~\"$job\",source=~\"$source\",dest=~\"$dest\"}[$__range]) >= $__from/1000) <= $__to/1000))",
+          "legendFormat": "",
+          "refId": "E",
           "instant": true,
           "range": false,
           "format": "table"
@@ -1115,29 +1186,50 @@
               "__name__": true
             },
             "renameByName": {
-              "Value #A": "Duration",
-              "Value #B": "Finished",
-              "Value #C": "Avg speed",
-              "Value #D": "Memory sent",
+              "instance_name": "Instance",
+              "instance_uuid": "Instance UUID",
               "source": "Source",
               "dest": "Dest",
-              "status": "Status"
+              "status": "Status",
+              "migration": "Migration",
+              "Value #A": "Finished",
+              "Value #B": "Started",
+              "Value #C": "Duration",
+              "Value #D": "Avg speed",
+              "Value #E": "Memory sent"
+            },
+            "indexByName": {
+              "Instance": 0,
+              "Instance UUID": 1,
+              "Source": 2,
+              "Dest": 3,
+              "Status": 4,
+              "Started": 5,
+              "Finished": 6,
+              "Duration": 7,
+              "Avg speed": 8,
+              "Memory sent": 9,
+              "Migration": 10
             }
           }
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Duration"
+              "options": "Started"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "s"
+                "value": "time:MM/DD/YYYY, hh:mm:ss A"
               }
             ]
           },
@@ -1149,7 +1241,19 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "dateTimeAsLocal"
+                "value": "time:MM/DD/YYYY, hh:mm:ss A"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
               }
             ]
           },

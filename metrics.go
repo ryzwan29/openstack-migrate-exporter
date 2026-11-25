@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type mwriter struct{ w *bufio.Writer }
@@ -105,12 +106,30 @@ func (p *Poller) writeMetrics(out io.Writer) {
 	m.sample("nova_live_migration_in_progress", float64(len(keys)))
 
 	lbl := func(in *inflight) []string {
-		return []string{"migration", in.key, "instance", in.instance, "source", in.source, "dest", in.dest}
+		return []string{"migration", in.key, "instance_uuid", in.instance, "instance_name", in.name, "source", in.source, "dest", in.dest}
 	}
 	m.family("nova_live_migration_info", "gauge", "In-progress live migration (value 1), with its Nova status.")
 	for _, k := range keys {
 		in := p.inflight[k]
 		m.sample("nova_live_migration_info", 1, append(lbl(in), "status", in.status)...)
+	}
+	m.family("nova_live_migration_start_timestamp_seconds", "gauge", "Unix time the live migration was created (running: no status label; finished: status = outcome, kept for -lookback).")
+	for _, k := range keys {
+		in := p.inflight[k]
+		if !in.created.IsZero() {
+			m.sample("nova_live_migration_start_timestamp_seconds", unixf(in.created), lbl(in)...)
+		}
+	}
+	rkeys := make([]string, 0, len(p.records))
+	for k := range p.records {
+		rkeys = append(rkeys, k)
+	}
+	sort.Strings(rkeys)
+	for _, k := range rkeys {
+		r := p.records[k]
+		if !r.created.IsZero() {
+			m.sample("nova_live_migration_start_timestamp_seconds", unixf(r.created), append(rlbl(r), "status", r.status)...)
+		}
 	}
 	m.family("nova_live_migration_elapsed_seconds", "gauge", "Seconds since the in-progress live migration was created.")
 	for _, k := range keys {
@@ -191,25 +210,36 @@ func (p *Poller) writeMetrics(out io.Writer) {
 		m.sample("nova_live_migration_duration_seconds_sum", h.sum, "source", k.source, "dest", k.dest, "status", k.status)
 		m.sample("nova_live_migration_duration_seconds_count", float64(h.count), "source", k.source, "dest", k.dest, "status", k.status)
 	}
-	pairs := sortedPairs(p.last)
-	m.family("nova_live_migration_last_duration_seconds", "gauge", "Duration of the most recent finished live migration per source/dest/status.")
-	for _, k := range pairs {
-		m.sample("nova_live_migration_last_duration_seconds", p.last[k].duration, "source", k.source, "dest", k.dest, "status", k.status)
+	m.family("nova_live_migration_end_timestamp_seconds", "gauge", "Unix time a live migration finished (updated_at); status = outcome. Kept for -lookback.")
+	for _, k := range rkeys {
+		r := p.records[k]
+		m.sample("nova_live_migration_end_timestamp_seconds", unixf(r.updated), append(rlbl(r), "status", r.status)...)
 	}
-	m.family("nova_live_migration_last_finished_timestamp_seconds", "gauge", "Unix time the most recent live migration finished.")
-	for _, k := range pairs {
-		m.sample("nova_live_migration_last_finished_timestamp_seconds", p.last[k].finished, "source", k.source, "dest", k.dest, "status", k.status)
+	m.family("nova_live_migration_finished_duration_seconds", "gauge", "Duration (updated_at - created_at) of a finished live migration.")
+	for _, k := range rkeys {
+		r := p.records[k]
+		d := r.updated.Sub(r.created).Seconds()
+		if r.created.IsZero() || d < 0 {
+			d = 0
+		}
+		m.sample("nova_live_migration_finished_duration_seconds", d, append(rlbl(r), "status", r.status)...)
 	}
-	m.family("nova_live_migration_last_memory_processed_bytes", "gauge", "Last observed memory_processed_bytes of the most recent migration (only if it was seen in flight).")
-	for _, k := range pairs {
-		if v := p.last[k].processed; v > 0 {
-			m.sample("nova_live_migration_last_memory_processed_bytes", v, "source", k.source, "dest", k.dest, "status", k.status)
+	m.family("nova_live_migration_final_memory_processed_bytes", "gauge", "Last observed memory_processed_bytes of a finished migration (only if it was seen running).")
+	for _, k := range rkeys {
+		if r := p.records[k]; r.processed > 0 {
+			m.sample("nova_live_migration_final_memory_processed_bytes", float64(r.processed), append(rlbl(r), "status", r.status)...)
 		}
 	}
-	m.family("nova_live_migration_last_avg_speed_bytes_per_second", "gauge", "Average memory speed of the most recent migration (only if it was seen in flight).")
-	for _, k := range pairs {
-		if v := p.last[k].avgSpeed; v > 0 {
-			m.sample("nova_live_migration_last_avg_speed_bytes_per_second", v, "source", k.source, "dest", k.dest, "status", k.status)
+	m.family("nova_live_migration_final_avg_speed_bytes_per_second", "gauge", "Average memory speed of a finished migration (only if it was seen running).")
+	for _, k := range rkeys {
+		if r := p.records[k]; r.avgSpeed > 0 {
+			m.sample("nova_live_migration_final_avg_speed_bytes_per_second", r.avgSpeed, append(rlbl(r), "status", r.status)...)
 		}
 	}
+}
+
+func unixf(t time.Time) float64 { return float64(t.UnixMilli()) / 1000 }
+
+func rlbl(r *record) []string {
+	return []string{"migration", r.key, "instance_uuid", r.instance, "instance_name", r.name, "source", r.source, "dest", r.dest}
 }

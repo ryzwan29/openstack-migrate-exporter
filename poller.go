@@ -12,6 +12,8 @@ import (
 
 var durationBuckets = []float64{5, 10, 20, 30, 45, 60, 90, 120, 180, 300, 600, 1200, 1800, 3600}
 
+const nameTTL = time.Hour
+
 var terminalStatuses = map[string]bool{
 	"completed": true, "failed": true, "error": true, "cancelled": true,
 	"done": true, "confirmed": true, "reverted": true, "finished": true,
@@ -32,24 +34,31 @@ func (h *hist) observe(v float64) {
 	h.count++
 }
 
-type lastInfo struct {
-	duration  float64
-	finished  float64 // unix seconds
-	processed float64 // last observed memory_processed_bytes (0 = unknown)
-	avgSpeed  float64 // processed / duration (0 = unknown)
+// record is a finished migration, exported for the history window (-lookback).
+type record struct {
+	key, instance, name, source, dest, status string
+	id                                        int64
+	created, updated                          time.Time
+	processed                                 int64   // last observed memory_processed_bytes (0 = never seen in flight)
+	avgSpeed                                  float64 // processed / duration (0 = unknown)
 }
 
 type inflight struct {
-	key, instance, source, dest, status string
-	id                                  int64
-	created                             time.Time
-	prog                                *progress
-	lastProcessed                       int64
-	lastAt                              time.Time
-	haveLast                            bool
-	speed                               float64
-	haveSpeed                           bool
-	misses                              int
+	key, instance, name, source, dest, status string
+	id                                        int64
+	created                                   time.Time
+	prog                                      *progress
+	lastProcessed                             int64
+	lastAt                                    time.Time
+	haveLast                                  bool
+	speed                                     float64
+	haveSpeed                                 bool
+	misses                                    int
+}
+
+type nameEntry struct {
+	name string // "" = instance not found (deleted)
+	at   time.Time
 }
 
 // Poller polls Nova and keeps the state exported on /metrics.
@@ -62,10 +71,10 @@ type Poller struct {
 	mu       sync.Mutex
 	cursor   time.Time
 	inflight map[string]*inflight
-	finished map[string]time.Time
+	records  map[string]*record
+	names    map[string]nameEntry
 	counts   map[pairKey]uint64
 	hists    map[pairKey]*hist
-	last     map[pairKey]*lastInfo
 
 	up       bool
 	lastOK   time.Time
@@ -77,8 +86,8 @@ type Poller struct {
 func newPoller(n *novaClient, interval, lookback time.Duration, log *slog.Logger) *Poller {
 	return &Poller{
 		nova: n, interval: interval, lookback: lookback, log: log,
-		inflight: map[string]*inflight{}, finished: map[string]time.Time{},
-		counts: map[pairKey]uint64{}, hists: map[pairKey]*hist{}, last: map[pairKey]*lastInfo{},
+		inflight: map[string]*inflight{}, records: map[string]*record{}, names: map[string]nameEntry{},
+		counts: map[pairKey]uint64{}, hists: map[pairKey]*hist{},
 	}
 }
 
@@ -124,6 +133,58 @@ func (p *Poller) healthy() bool {
 		limit = time.Minute
 	}
 	return p.up && time.Since(p.lastOK) < limit
+}
+
+// nameOf must be called with p.mu held.
+func (p *Poller) nameOf(uuid string) string {
+	if uuid == "" {
+		return ""
+	}
+	e, ok := p.names[uuid]
+	switch {
+	case !ok:
+		return uuid
+	case e.name == "":
+		return "(deleted)"
+	}
+	return e.name
+}
+
+func (p *Poller) resolveNames(ctx context.Context, list []migration) {
+	need := map[string]bool{}
+	p.mu.Lock()
+	for _, m := range list {
+		if m.InstanceUUID == "" {
+			continue
+		}
+		if e, ok := p.names[m.InstanceUUID]; !ok || time.Since(e.at) > nameTTL {
+			need[m.InstanceUUID] = true
+		}
+	}
+	p.mu.Unlock()
+	for uuid := range need {
+		name, err := p.nova.getServerName(ctx, uuid)
+		p.mu.Lock()
+		old := p.names[uuid]
+		switch {
+		case err == nil:
+			p.names[uuid] = nameEntry{name, time.Now()}
+		case isNotFound(err):
+			if old.name != "" { // deleted since: keep the last known name
+				p.names[uuid] = nameEntry{old.name, time.Now()}
+			} else {
+				p.names[uuid] = nameEntry{"", time.Now()}
+			}
+		default:
+			p.log.Warn("instance name lookup failed", "instance", uuid, "err", err)
+		}
+		p.mu.Unlock()
+	}
+}
+
+func isNotFound(err error) bool {
+	he, ok := err.(*httpError)
+	return ok && he.Code == 404
 }
 
 func (p *Poller) poll(ctx context.Context) error {
@@ -186,6 +247,7 @@ func (p *Poller) poll(ctx context.Context) error {
 		list = append(list, m)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt < list[j].CreatedAt })
+	p.resolveNames(ctx, list)
 
 	p.mu.Lock()
 	p.apply(list, seen, now)
@@ -205,11 +267,10 @@ func (p *Poller) poll(ctx context.Context) error {
 	for _, in := range snap {
 		pr, err := p.nova.getProgress(ctx, in.instance, in.id)
 		if err != nil {
-			if he, ok := err.(*httpError); ok && he.Code == 404 {
-				continue // not (yet) a running live migration
+			if !isNotFound(err) {
+				p.log.Warn("progress fetch failed", "migration", in.key, "err", err)
 			}
-			p.log.Warn("progress fetch failed", "migration", in.key, "err", err)
-			continue
+			continue // 404: not (yet) a running live migration
 		}
 		results = append(results, res{in.key, pr})
 	}
@@ -235,10 +296,10 @@ func (p *Poller) poll(ctx context.Context) error {
 		overlap = time.Minute
 	}
 	p.cursor = now.Add(-overlap)
-	// prune dedupe map
-	for k, t := range p.finished {
-		if t.Before(p.cursor.Add(-time.Hour)) {
-			delete(p.finished, k)
+	// retention of finished records (history window)
+	for k, r := range p.records {
+		if r.updated.Before(now.Add(-p.lookback)) {
+			delete(p.records, k)
 		}
 	}
 	p.mu.Unlock()
@@ -258,19 +319,28 @@ func (p *Poller) apply(list []migration, seen map[string]migration, now time.Tim
 		k := m.key()
 		status := strings.ToLower(m.Status)
 		created, _ := parseNovaTime(m.CreatedAt)
+		name := p.nameOf(m.InstanceUUID)
 		if terminalStatuses[status] {
-			if _, done := p.finished[k]; done {
+			if _, done := p.records[k]; done {
 				continue
 			}
 			updated, ok := parseNovaTime(m.UpdatedAt)
 			if !ok {
 				updated = now
 			}
-			p.finished[k] = updated
+			rec := &record{key: k, id: m.ID, instance: m.InstanceUUID, name: name,
+				source: m.SourceCompute, dest: m.DestCompute, status: status, created: created, updated: updated}
 			dur := updated.Sub(created).Seconds()
 			if created.IsZero() || dur < 0 {
 				dur = 0
 			}
+			if in := p.inflight[k]; in != nil && in.haveLast && in.lastProcessed > 0 {
+				rec.processed = in.lastProcessed
+				if dur > 0 {
+					rec.avgSpeed = float64(rec.processed) / dur
+				}
+			}
+			p.records[k] = rec
 			pk := pairKey{m.SourceCompute, m.DestCompute, status}
 			p.counts[pk]++
 			h := p.hists[pk]
@@ -279,14 +349,6 @@ func (p *Poller) apply(list []migration, seen map[string]migration, now time.Tim
 				p.hists[pk] = h
 			}
 			h.observe(dur)
-			li := &lastInfo{duration: dur, finished: float64(updated.Unix())}
-			if in := p.inflight[k]; in != nil && in.haveLast && in.lastProcessed > 0 {
-				li.processed = float64(in.lastProcessed)
-				if dur > 0 {
-					li.avgSpeed = li.processed / dur
-				}
-			}
-			p.last[pk] = li
 			delete(p.inflight, k)
 			continue
 		}
@@ -295,7 +357,7 @@ func (p *Poller) apply(list []migration, seen map[string]migration, now time.Tim
 			in = &inflight{key: k}
 			p.inflight[k] = in
 		}
-		in.id, in.instance = m.ID, m.InstanceUUID
+		in.id, in.instance, in.name = m.ID, m.InstanceUUID, name
 		in.source, in.dest, in.status = m.SourceCompute, m.DestCompute, status
 		in.created = created
 		in.misses = 0

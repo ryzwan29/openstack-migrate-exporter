@@ -1,16 +1,16 @@
 services:
   openstack-migrate-exporter:
-    image: ghcr.io/ryzwan29/openstack-migrate-exporter:v1.0.0
+    image: ghcr.io/ryzwan29/openstack-migrate-exporter:latest
     container_name: openstack-migrate-exporter
     restart: unless-stopped
     environment:
       OS_CLIENT_CONFIG_FILE: /etc/openstack/clouds.yaml
       OS_CLOUD: kolla-admin
-      OS_INTERFACE: internal        
+      OS_INTERFACE: internal
       POLL_INTERVAL: 5s
-      LOOKBACK: 24h
+      LOOKBACK: 168h
       # NOVA_MICROVERSION: "2.80"
-      # NOVA_ENDPOINT: http://192.168.19.63:8774/v2.1   
+      # NOVA_ENDPOINT: http://192.168.19.63:8774/v2.1
       # OS_INSECURE: "true"
     ports:
       - "9181:9181"

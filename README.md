@@ -8,20 +8,23 @@ Data: Nova API (`/os-migrations`, `/servers/{id}/migrations/{id}`), admin creden
 docker compose -f deploy/docker-compose.yml up -d
 curl -s localhost:9181/metrics | grep nova_live_migration
 ```
-Auth: `clouds.yaml` (`OS_CLOUD`) or `OS_*` env. Flags/env: `-listen :9181`, `-poll-interval 5s`, `-lookback 24h`,
+Auth: `clouds.yaml` (`OS_CLOUD`) or `OS_*` env. Flags/env: `-listen :9181`, `-poll-interval 5s`, `-lookback 168h`,
 `-nova-microversion 2.80`, `-interface internal`, `-nova-endpoint URL`, `-insecure`.
 
 ## metrics
 | metric | note |
 |---|---|
 | `nova_live_migration_in_progress` | count |
-| `nova_live_migration_{info,elapsed_seconds}{migration,instance,source,dest}` | per running migration |
+| `nova_live_migration_{info,elapsed_seconds}{migration,instance_uuid,instance_name,source,dest}` | per running migration |
+| `nova_live_migration_start_timestamp_seconds` | unix start time (running + finished) |
+| `nova_live_migration_end_timestamp_seconds{..,status}` | unix finish time, per finished migration (kept `-lookback`, default 168h) |
+| `nova_live_migration_finished_duration_seconds{..,status}` | per finished migration |
+| `nova_live_migration_final_{avg_speed_bytes_per_second,memory_processed_bytes}` | per finished, only if seen running |
 | `nova_live_migration_memory_{total,processed,remaining}_bytes` | per running (disk_* too if block migration) |
 | `nova_live_migration_memory_{speed,avg_speed}_bytes_per_second` | instant (between polls) / avg since start |
 | `nova_live_migration_memory_progress_ratio` | 1 - remaining/total |
 | `nova_live_migrations_total{source,dest,status}` | finished, by outcome |
 | `nova_live_migration_duration_seconds` | histogram, updated_at - created_at |
-| `nova_live_migration_last_*{source,dest,status}` | last finished: duration, timestamp, avg speed, bytes |
 | `nova_migrate_exporter_{up,poll_errors_total,...}` | self metrics |
 
 Progress/speed only exist while a migration is running (Nova drops them after). Migrations that finish

@@ -149,3 +149,15 @@ func parseNovaTime(s string) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+func (n *novaClient) getServerName(ctx context.Context, uuid string) (string, error) {
+	var r struct {
+		Server struct {
+			Name string `json:"name"`
+		} `json:"server"`
+	}
+	if err := n.do(ctx, "/servers/"+uuid, &r); err != nil {
+		return "", err
+	}
+	return r.Server.Name, nil
+}

@@ -1,5 +1,5 @@
 IMAGE   ?= ghcr.io/ryzwan29/openstack-migrate-exporter
-VERSION ?= v1.0.0
+VERSION ?= v1.1.0
 
 .PHONY: test build docker push
 test:
